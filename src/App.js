@@ -25,7 +25,7 @@ function App() {
 
   return (
     <div className="container">
-      <h1>My To-Do List</h1>
+      <h1>My Task Manager</h1>
       <div className="input-row">
         <input
           type="text"
