@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 
 function App() {
@@ -8,9 +8,56 @@ function App() {
   const [editingIndex, setEditingIndex] = useState(null);
   const [editText, setEditText] = useState('');
 
+  useEffect(() => {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+
+      setTasks((currentTasks) =>
+        currentTasks.map((t) => {
+          if (t.deadline && !t.completed) {
+            const deadlineTime = new Date(t.deadline);
+            if (now >= deadlineTime) {
+              playAlarmSound();
+              showNotification(t.text);
+              return { ...t, overdue: true };
+            }
+          }
+          return t;
+        })
+      );
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const playAlarmSound = () => {
+    const audio = new Audio(
+      'https://actions.google.com/sounds/v1/alarms/beep_short.ogg'
+    );
+    audio.play();
+  };
+
+  const showNotification = (taskText) => {
+    if (Notification.permission === 'granted') {
+      new Notification('Task Deadline Reached!', {
+        body: taskText,
+        icon: '🔔',
+      });
+    }
+  };
+
   const addTask = () => {
     if (task === '') return;
-    setTasks([...tasks, { text: task, completed: false, deadline: '' }]);
+    setTasks([
+      ...tasks,
+      { text: task, completed: false, deadline: '', alerted: false, overdue: false },
+    ]);
     setTask('');
   };
 
@@ -23,14 +70,13 @@ function App() {
 
   const setDeadline = (index, date) => {
     const updatedTasks = tasks.map((t, i) =>
-      i === index ? { ...t, deadline: date } : t
+      i === index ? { ...t, deadline: date, alerted: false, overdue: false } : t
     );
     setTasks(updatedTasks);
   };
 
   const finishTask = (index) => {
     setCelebratingIndex(index);
-
     setTimeout(() => {
       setTasks((currentTasks) => currentTasks.filter((_, i) => i !== index));
       setCelebratingIndex(null);
@@ -65,13 +111,19 @@ function App() {
           placeholder="Enter a task..."
           value={task}
           onChange={(e) => setTask(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.keyCode === 13) {
+              e.preventDefault();
+              addTask();
+            }
+          }}
         />
         <button className="add-btn" onClick={addTask}>Add Task</button>
       </div>
 
       <ul>
         {tasks.map((t, index) => (
-          <li key={index}>
+          <li key={index} className={t.overdue ? 'overdue' : ''}>
             {editingIndex === index ? (
               <input
                 type="text"
@@ -84,7 +136,7 @@ function App() {
                 className={`task-text ${t.completed ? 'completed' : ''}`}
                 onClick={() => toggleComplete(index)}
               >
-                {t.text}
+                {t.overdue ? '🔔 ' : ''}{t.text}
               </span>
             )}
 
