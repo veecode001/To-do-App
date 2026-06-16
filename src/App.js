@@ -4,10 +4,11 @@ import './App.css';
 function App() {
   const [task, setTask] = useState('');
   const [tasks, setTasks] = useState([]);
+  const [celebratingIndex, setCelebratingIndex] = useState(null);
 
   const addTask = () => {
     if (task === '') return;
-    setTasks([...tasks, { text: task, completed: false }]);
+    setTasks([...tasks, { text: task, completed: false, deadline: '' }]);
     setTask('');
   };
 
@@ -18,9 +19,20 @@ function App() {
     setTasks(updatedTasks);
   };
 
-  const deleteTask = (index) => {
-    const updatedTasks = tasks.filter((t, i) => i !== index);
+  const setDeadline = (index, date) => {
+    const updatedTasks = tasks.map((t, i) =>
+      i === index ? { ...t, deadline: date } : t
+    );
     setTasks(updatedTasks);
+  };
+
+  const finishTask = (index) => {
+    setCelebratingIndex(index);
+
+    setTimeout(() => {
+      setTasks((currentTasks) => currentTasks.filter((_, i) => i !== index));
+      setCelebratingIndex(null);
+    }, 3000);
   };
 
   return (
@@ -45,9 +57,24 @@ function App() {
             >
               {t.text}
             </span>
-            <button className="delete-btn" onClick={() => deleteTask(index)}>
-              Delete
-            </button>
+
+            {t.deadline && <span className="deadline-text">📅 {t.deadline}</span>}
+
+            {celebratingIndex === index ? (
+              <span className="celebration">👏 👍</span>
+            ) : (
+              <>
+                <input
+                  type="datetime-local"
+                  className="deadline-input"
+                  value={t.deadline}
+                  onChange={(e) => setDeadline(index, e.target.value)}
+                />
+                <button className="done-btn" onClick={() => finishTask(index)}>
+                  Task Done
+                </button>
+              </>
+            )}
           </li>
         ))}
       </ul>
