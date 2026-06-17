@@ -1,9 +1,36 @@
+import Auth from './Auth';
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import { supabase } from './supabaseClient';
 
 function App() {
+  const [user, setUser] = useState(null);
   const [task, setTask] = useState('');
   const [tasks, setTasks] = useState([]);
+  useEffect(() => {
+    const getSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        setUser(data.session.user);
+        fetchTasks(data.session.user.id);
+      }
+    };
+    getSession();
+  }, []);
+
+const fetchTasks = async (userId) => {
+  const { data, error } = await supabase
+    .from('Tasks')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching tasks:', error);
+  } else {
+    setTasks(data);
+  }
+};
   const [celebratingIndex, setCelebratingIndex] = useState(null);
   const [editingIndex, setEditingIndex] = useState(null);
   const [editText, setEditText] = useState('');
@@ -52,39 +79,81 @@ function App() {
     }
   };
 
-  const addTask = () => {
+  const addTask = async () => {
     if (task === '') return;
-    setTasks([
-      ...tasks,
-      { text: task, completed: false, deadline: '', alerted: false, overdue: false },
-    ]);
-    setTask('');
+
+    const { data, error } = await supabase
+      .from('Tasks')
+      .insert([{ text: task, completed: false, user_id: user.id }])
+      .select();
+
+    if (error) {
+      console.error('Error adding task:', error);
+    } else {
+     setTasks([...tasks, data[0]]);
+      setTask('');
+    }
   };
 
-  const toggleComplete = (index) => {
-    const updatedTasks = tasks.map((t, i) =>
-      i === index ? { ...t, completed: !t.completed } : t
-    );
-    setTasks(updatedTasks);
+  const toggleComplete = async (id, currentStatus) => {
+    const { error } = await supabase
+      .from('Tasks')
+      .update({ completed: !currentStatus })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error updating task:', error);
+    } else {
+      setTasks(tasks.map((t) =>
+        t.id === id ? { ...t, completed: !currentStatus } : t
+      ));
+    }
   };
 
-  const setDeadline = (index, date) => {
-    const updatedTasks = tasks.map((t, i) =>
-      i === index ? { ...t, deadline: date, alerted: false, overdue: false } : t
-    );
-    setTasks(updatedTasks);
+  const setDeadline = async (id, date) => {
+    const { error } = await supabase
+      .from('Tasks')
+      .update({ deadline: date, overdue: false })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error setting deadline:', error);
+    } else {
+      setTasks(tasks.map((t) =>
+        t.id === id ? { ...t, deadline: date, overdue: false } : t
+      ));
+    }
   };
 
-  const finishTask = (index) => {
+  const finishTask = (id, index) => {
     setCelebratingIndex(index);
-    setTimeout(() => {
-      setTasks((currentTasks) => currentTasks.filter((_, i) => i !== index));
+
+    setTimeout(async () => {
+      const { error } = await supabase
+        .from('Tasks')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error finishing task:', error);
+      } else {
+        setTasks((currentTasks) => currentTasks.filter((t) => t.id !== id));
+      }
       setCelebratingIndex(null);
     }, 3000);
   };
 
-  const deleteTask = (index) => {
-    setTasks(tasks.filter((_, i) => i !== index));
+  const deleteTask = async (id) => {
+    const { error } = await supabase
+      .from('Tasks')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting task:', error);
+    } else {
+      setTasks(tasks.filter((t) => t.id !== id));
+    }
   };
 
   const startEditing = (index, currentText) => {
@@ -92,17 +161,49 @@ function App() {
     setEditText(currentText);
   };
 
-  const saveEdit = (index) => {
+  const saveEdit = async (id) => {
     if (editText.trim() === '') return;
-    const updatedTasks = tasks.map((t, i) =>
-      i === index ? { ...t, text: editText } : t
-    );
-    setTasks(updatedTasks);
-    setEditingIndex(null);
-    setEditText('');
+
+    const { error } = await supabase
+      .from('Tasks')
+      .update({ text: editText })
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error saving edit:', error);
+    } else {
+      setTasks(tasks.map((t) =>
+        t.id === id ? { ...t, text: editText } : t
+      ));
+      setEditingIndex(null);
+      setEditText('');
+    }
   };
 
-  return (
+  if (!user) {
+    return (
+      <Auth
+        onLogin={(loggedInUser) => {
+          setUser(loggedInUser);
+          fetchTasks(loggedInUser.id);
+        }}
+      />
+    );
+  }
+
+return (
+  <>
+    <button
+      className="logout-btn"
+      onClick={async () => {
+        await supabase.auth.signOut();
+        setUser(null);
+        setTasks([]);
+      }}
+    >
+      Log Out
+    </button>
+
     <div className="container">
       <h1>My Task Manager</h1>
       <div className="input-row">
@@ -134,7 +235,7 @@ function App() {
             ) : (
               <span
                 className={`task-text ${t.completed ? 'completed' : ''}`}
-                onClick={() => toggleComplete(index)}
+                onClick={() => toggleComplete(t.id, t.completed)}
               >
                 {t.overdue ? '🔔 ' : ''}{t.text}
               </span>
@@ -150,11 +251,11 @@ function App() {
                   type="datetime-local"
                   className="deadline-input"
                   value={t.deadline}
-                  onChange={(e) => setDeadline(index, e.target.value)}
+                  onChange={(e) => setDeadline(t.id, e.target.value)}
                 />
 
                 {editingIndex === index ? (
-                  <button className="save-btn" onClick={() => saveEdit(index)}>
+                  <button className="save-btn" onClick={() => saveEdit(t.id)}>
                     Save
                   </button>
                 ) : (
@@ -163,10 +264,10 @@ function App() {
                   </button>
                 )}
 
-                <button className="done-btn" onClick={() => finishTask(index)}>
+                <button className="done-btn" onClick={() => finishTask(t.id, index)}>
                   Done
                 </button>
-                <button className="delete-btn" onClick={() => deleteTask(index)}>
+                <button className="delete-btn" onClick={() => deleteTask(t.id)}>
                   Delete
                 </button>
               </>
@@ -175,6 +276,7 @@ function App() {
         ))}
       </ul>
     </div>
+  </>
   );
 }
 
